@@ -13,7 +13,7 @@ load_dotenv(find_dotenv(), override=False)
 mcp = FastMCP("Demo")
 
 
-@mcp.tool(name='Zoho MCP - refresh token')
+@mcp.tool()
 def refresh_token():
     zoho_config = get_zoho_config()
     base_url_acc = 'https://accounts.zoho.eu'
