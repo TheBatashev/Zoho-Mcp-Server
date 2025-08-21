@@ -1,8 +1,8 @@
 from dataclasses import dataclass
-from dotenv import load_dotenv, find_dotenv
+from dotenv import load_dotenv
 import os
 
-load_dotenv(find_dotenv(), override=False)
+load_dotenv()
 
 @dataclass
 class ZohoConfig:

@@ -4,11 +4,11 @@ import json
 
 from zoho_mcp.config import get_zoho_config, get_access_token, update_access_token
 
-from dotenv import load_dotenv, find_dotenv
+from dotenv import load_dotenv
 import os
 import traceback
 
-load_dotenv(find_dotenv(), override=False)
+load_dotenv()
 
 mcp = FastMCP("Demo")
 
