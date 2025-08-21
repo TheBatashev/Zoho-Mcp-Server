@@ -2,24 +2,47 @@ from mcp.server.fastmcp import FastMCP
 import requests
 import json
 
+from config import get_zoho_config, get_access_token, update_access_token
+
+from dotenv import load_dotenv, find_dotenv
+import os
+import traceback
+
+load_dotenv(find_dotenv(), override=False)
+
 mcp = FastMCP("Demo")
 
-@mcp.tool()
-def add(a: int, b: int) -> int:
-    """Add two numbers"""
-    return a + b
 
+@mcp.tool(name='Zoho MCP - refresh token')
+def refresh_token():
+    zoho_config = get_zoho_config()
+    base_url_acc = 'https://accounts.zoho.eu'
+    path = '/oauth/v2/token'
+    params = {
+        'grant_type': 'refresh_token',
+        'client_id': zoho_config.client_id,
+        'client_secret': zoho_config.client_secret,
+        'refresh_token': zoho_config.refresh_token
+    }
 
-ACCESS_TOKEN = "1000.d670c62c95dbf02dfe531d286b559c12.68c285c2939aebe00b8bc6de9548d7cf"
-ZOHO_API_BASE_URL = "https://www.zohoapis.com/crm/v2"
+    response = requests.post(base_url_acc + path, data=params)
+    try:
+        json_resp =  response.json()
+        access_token = json_resp['access_token']
+        is_created = update_access_token(access_token)
+        if is_created :
+            return {
+                'status_code': response.status_code,
+                'error' : None
+            }
+        else:
+            raise RuntimeError('Error when updating the token')
 
-
-ZOHO_MODULES = [
-    "Leads",
-    "Accounts", 
-    "Contacts",
-    "Deals"
-]
+    except Exception as ex:
+        return {
+            'status_code' : response.status_code,
+            'error' : f'{ex} \n {traceback.format_exc()}'
+        }
 
 @mcp.tool()
 def get_module_data(ctx, module_name: str = None):
@@ -30,13 +53,15 @@ def get_module_data(ctx, module_name: str = None):
         module_name: Specific module name (e.g., 'Contacts', 'Leads'). 
                     If None, fetches from all modules.
     """
+    access_token = get_access_token()
+    zoho_config = get_zoho_config()
     headers = {
-        "Authorization": f"Zoho-oauthtoken {ACCESS_TOKEN}",
+        "Authorization": f"Zoho-oauthtoken {access_token}",
         "Content-Type": "application/json"
     }
     
     if module_name:
-        url = f"{ZOHO_API_BASE_URL}/{module_name}"
+        url = f"{zoho_config.base_url}/{module_name}"
         response = requests.get(url, headers=headers)
         
         if response.status_code == 200:
@@ -58,8 +83,8 @@ def get_module_data(ctx, module_name: str = None):
         all_data = {}
         errors = []
         
-        for module in ZOHO_MODULES:
-            url = f"{ZOHO_API_BASE_URL}/{module}"
+        for module in zoho_config.modules:
+            url = f"{zoho_config.base_url}/{module}"
             response = requests.get(url, headers=headers)
             
             if response.status_code == 200:
@@ -86,12 +111,14 @@ def get_module_data(ctx, module_name: str = None):
 @mcp.tool()
 def get_available_modules(ctx):
     """Get list of all available modules in Zoho CRM"""
+    access_token = get_access_token()
+    zoho_config = get_zoho_config()
     headers = {
-        "Authorization": f"Zoho-oauthtoken {ACCESS_TOKEN}",
+        "Authorization": f"Zoho-oauthtoken {access_token}",
         "Content-Type": "application/json"
     }
     
-    url = f"{ZOHO_API_BASE_URL}/settings/modules"
+    url = f"{zoho_config.base_url}/settings/modules"
     response = requests.get(url, headers=headers)
     
     if response.status_code == 200:
@@ -117,12 +144,15 @@ def search_records(ctx, module_name: str, search_criteria: str):
         module_name: Module to search in (e.g., 'Contacts', 'Leads')
         search_criteria: Search query (e.g., 'email:john@example.com')
     """
+    access_token = get_access_token()
+    zoho_config = get_zoho_config()
+
     headers = {
-        "Authorization": f"Zoho-oauthtoken {ACCESS_TOKEN}",
+        "Authorization": f"Zoho-oauthtoken {access_token}",
         "Content-Type": "application/json"
     }
     
-    url = f"{ZOHO_API_BASE_URL}/{module_name}/search"
+    url = f"{zoho_config.base_url}/{module_name}/search"
     params = {"criteria": search_criteria}
     
     response = requests.get(url, headers=headers, params=params)
@@ -153,12 +183,15 @@ def create_record(ctx, module_name: str, record_data: dict):
         record_data: Dictionary containing the record fields and values
                     Example: {"First_Name": "John", "Last_Name": "Doe", "Email": "john@example.com"}
     """
+    access_token = get_access_token()
+    zoho_config = get_zoho_config()
+
     headers = {
-        "Authorization": f"Zoho-oauthtoken {ACCESS_TOKEN}",
+        "Authorization": f"Zoho-oauthtoken {access_token}",
         "Content-Type": "application/json"
     }
     
-    url = f"{ZOHO_API_BASE_URL}/{module_name}"
+    url = f"{zoho_config.base_url}/{module_name}"
     
     # Wrap the record data in the required format
     payload = {
@@ -194,12 +227,15 @@ def update_record(ctx, module_name: str, record_id: str, record_data: dict):
         record_data: Dictionary containing the fields to update and their new values
                     Example: {"First_Name": "Jane", "Email": "jane@example.com"}
     """
+    access_token = get_access_token()
+    zoho_config = get_zoho_config()
+
     headers = {
-        "Authorization": f"Zoho-oauthtoken {ACCESS_TOKEN}",
+        "Authorization": f"Zoho-oauthtoken {access_token}",
         "Content-Type": "application/json"
     }
     
-    url = f"{ZOHO_API_BASE_URL}/{module_name}/{record_id}"
+    url = f"{zoho_config.base_url}/{module_name}/{record_id}"
     
     # Add the record ID to the data
     record_data["id"] = record_id
@@ -238,12 +274,15 @@ def delete_record(ctx, module_name: str, record_id: str):
         module_name: Module containing the record (e.g., 'Contacts', 'Leads')
         record_id: ID of the record to delete
     """
+    access_token = get_access_token()
+    zoho_config = get_zoho_config()
+
     headers = {
-        "Authorization": f"Zoho-oauthtoken {ACCESS_TOKEN}",
+        "Authorization": f"Zoho-oauthtoken {access_token}",
         "Content-Type": "application/json"
     }
     
-    url = f"{ZOHO_API_BASE_URL}/{module_name}/{record_id}"
+    url = f"{zoho_config.base_url}/{module_name}/{record_id}"
     
     response = requests.delete(url, headers=headers)
     
@@ -275,12 +314,15 @@ def bulk_create_records(ctx, module_name: str, records_data: list):
         records_data: List of dictionaries containing record data
                      Example: [{"First_Name": "John", "Last_Name": "Doe"}, {"First_Name": "Jane", "Last_Name": "Smith"}]
     """
+    access_token = get_access_token()
+    zoho_config = get_zoho_config()
+
     headers = {
-        "Authorization": f"Zoho-oauthtoken {ACCESS_TOKEN}",
+        "Authorization": f"Zoho-oauthtoken {access_token}",
         "Content-Type": "application/json"
     }
     
-    url = f"{ZOHO_API_BASE_URL}/{module_name}"
+    url = f"{zoho_config.base_url}/{module_name}"
     
     # Zoho CRM allows up to 100 records per API call
     if len(records_data) > 100:
@@ -320,12 +362,15 @@ def get_record_by_id(ctx, module_name: str, record_id: str):
         module_name: Module containing the record (e.g., 'Contacts', 'Leads')
         record_id: ID of the record to retrieve
     """
+    access_token = get_access_token()
+    zoho_config = get_zoho_config()
+
     headers = {
-        "Authorization": f"Zoho-oauthtoken {ACCESS_TOKEN}",
+        "Authorization": f"Zoho-oauthtoken {access_token}",
         "Content-Type": "application/json"
     }
     
-    url = f"{ZOHO_API_BASE_URL}/{module_name}/{record_id}"
+    url = f"{zoho_config.base_url}/{module_name}/{record_id}"
     
     response = requests.get(url, headers=headers)
     
