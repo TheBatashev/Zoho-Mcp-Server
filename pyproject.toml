@@ -1,11 +1,18 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
-name = "server"
+name = "zoho-mcp-server"
 version = "0.1.0"
-description = "Add your description here"
+description = "Zoho MCP server"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 dependencies = [
     "mcp>=1.9.4",
     "requests>=2.31.0",
     "dotenv>=0.9.9",
 ]
+
+[project.scripts]
+zoho-mcp-server = "zoho_mcp.main:run"

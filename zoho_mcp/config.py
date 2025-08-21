@@ -20,7 +20,7 @@ def get_zoho_config():
         refresh_token=os.getenv('ZOHO_REFRESH_TOKEN'),
         client_id=os.getenv('ZOHO_CLIENT_ID'),
         client_secret=os.getenv('ZOHO_CLIENT_SECRET'),
-        modules=[
+        modules = [
             "Leads",
             "Accounts", 
             "Contacts",
@@ -35,6 +35,8 @@ def get_zoho_config():
 class AccessTokenConfig:
     access_token : str
 
+# We can specify the token here or leave the value as it is. 
+# The AI itself will trigger the token refresh tool and the token will be updated.
 access_token_config = AccessTokenConfig(access_token='AAA')
 
 def get_access_token() -> str:
