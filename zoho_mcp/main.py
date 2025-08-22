@@ -42,33 +42,64 @@ def ensure_valid_token():
             raise RuntimeError("Не удалось обновить токен доступа")
 
 @mcp.tool()
-def get_module_data(ctx, module_name: str = None):
+def get_module_data(ctx, module_name: str = None, limit: int = 10, offset: int = 0):
     """
     Fetch data from Zoho CRM modules
     
     Args:
         module_name: Specific module name (e.g., 'Contacts', 'Leads'). 
                     If None, fetches from all modules.
+        limit: Maximum number of records to return per module (default: 10, max: 200)
+        offset: Number of records to skip (default: 0)
     """
     ensure_valid_token()
     access_token = get_access_token()
     zoho_config = get_zoho_config()
+    
+    # Ограничиваем limit максимальным значением 200 (лимит Zoho API)
+    limit = min(limit, 200)
+    if limit <= 0:
+        limit = 10
+    
+    # Вычисляем номер страницы из offset
+    page = (offset // limit) + 1
+    
     headers = {
         "Authorization": f"Zoho-oauthtoken {access_token}",
         "Content-Type": "application/json"
     }
     
+    # Zoho CRM REST API v2 не поддерживает стандартную пагинацию
+    # Используем клиентскую пагинацию - получаем все данные и обрезаем
+    params = {}
+    
     if module_name:
         url = f"{zoho_config.base_url}/{module_name}"
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, params=params)
         
         if response.status_code == 200:
-            data = response.json().get("data", [])
+            response_data = response.json()
+            all_data = response_data.get("data", [])
+            info = response_data.get("info", {})
+            
+            # Клиентская пагинация - обрезаем данные
+            total_records = len(all_data)
+            start_index = offset
+            end_index = offset + limit
+            paginated_data = all_data[start_index:end_index]
+            
             return {
                 "status": "success",
                 "module": module_name,
-                "count": len(data),
-                "data": data
+                "count": len(paginated_data),
+                "data": paginated_data,
+                "pagination": {
+                    "limit": limit,
+                    "offset": offset,
+                    "total_records": total_records,
+                    "has_more": end_index < total_records,
+                    "returned_count": len(paginated_data)
+                }
             }
         else:
             return {
@@ -80,17 +111,35 @@ def get_module_data(ctx, module_name: str = None):
     else:
         all_data = {}
         errors = []
+        total_records = 0
         
         for module in zoho_config.modules:
             url = f"{zoho_config.base_url}/{module}"
-            response = requests.get(url, headers=headers)
+            response = requests.get(url, headers=headers, params=params)
             
             if response.status_code == 200:
-                data = response.json().get("data", [])
+                response_data = response.json()
+                all_module_data = response_data.get("data", [])
+                info = response_data.get("info", {})
+                
+                # Клиентская пагинация для каждого модуля
+                module_total = len(all_module_data)
+                start_index = offset
+                end_index = offset + limit
+                paginated_module_data = all_module_data[start_index:end_index]
+                
                 all_data[module] = {
-                    "count": len(data),
-                    "data": data
+                    "count": len(paginated_module_data),
+                    "data": paginated_module_data,
+                    "pagination": {
+                        "limit": limit,
+                        "offset": offset,
+                        "total_records": module_total,
+                        "has_more": end_index < module_total,
+                        "returned_count": len(paginated_module_data)
+                    }
                 }
+                total_records += len(paginated_module_data)
             else:
                 errors.append({
                     "module": module,
@@ -101,8 +150,13 @@ def get_module_data(ctx, module_name: str = None):
         return {
             "status": "success",
             "modules_fetched": len(all_data),
-            "total_records": sum(module_data["count"] for module_data in all_data.values()),
+            "total_records": total_records,
             "data": all_data,
+            "pagination": {
+                "limit_per_module": limit,
+                "offset": offset,
+                "note": "Client-side pagination due to Zoho API limitations"
+            },
             "errors": errors if errors else None
         }
 
@@ -141,7 +195,7 @@ def search_records(ctx, module_name: str, search_criteria: str):
     
     Args:
         module_name: Module to search in (e.g., 'Contacts', 'Leads')
-        search_criteria: Search query (e.g., 'email:john@example.com')
+        search_criteria: Search query (e.g., 'Email:john@example.com')
     """
     ensure_valid_token()
     access_token = get_access_token()
