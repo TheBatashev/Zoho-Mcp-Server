@@ -2,7 +2,7 @@ from mcp.server.fastmcp import FastMCP
 import requests
 import json
 
-from zoho_mcp.config import get_zoho_config, get_access_token, update_access_token
+from zoho_mcp.config import get_zoho_config, get_access_token, update_access_token, is_token_expired
 
 from dotenv import load_dotenv
 import os
@@ -13,8 +13,8 @@ load_dotenv()
 mcp = FastMCP("Demo")
 
 
-@mcp.tool()
 def refresh_token():
+    """Обновляет access token используя refresh token"""
     zoho_config = get_zoho_config()
     base_url_acc = 'https://accounts.zoho.eu'
     path = '/oauth/v2/token'
@@ -27,22 +27,19 @@ def refresh_token():
 
     response = requests.post(base_url_acc + path, data=params)
     try:
-        json_resp =  response.json()
+        json_resp = response.json()
         access_token = json_resp['access_token']
-        is_created = update_access_token(access_token)
-        if is_created :
-            return {
-                'status_code': response.status_code,
-                'error' : None
-            }
-        else:
-            raise RuntimeError('Error when updating the token')
-
+        update_access_token(access_token)
+        return True
     except Exception as ex:
-        return {
-            'status_code' : response.status_code,
-            'error' : f'{ex} \n {traceback.format_exc()}'
-        }
+        print(f"Ошибка обновления токена: {ex}")
+        return False
+
+def ensure_valid_token():
+    """Проверяет валидность токена и обновляет его при необходимости"""
+    if is_token_expired():
+        if not refresh_token():
+            raise RuntimeError("Не удалось обновить токен доступа")
 
 @mcp.tool()
 def get_module_data(ctx, module_name: str = None):
@@ -53,6 +50,7 @@ def get_module_data(ctx, module_name: str = None):
         module_name: Specific module name (e.g., 'Contacts', 'Leads'). 
                     If None, fetches from all modules.
     """
+    ensure_valid_token()
     access_token = get_access_token()
     zoho_config = get_zoho_config()
     headers = {
@@ -111,6 +109,7 @@ def get_module_data(ctx, module_name: str = None):
 @mcp.tool()
 def get_available_modules(ctx):
     """Get list of all available modules in Zoho CRM"""
+    ensure_valid_token()
     access_token = get_access_token()
     zoho_config = get_zoho_config()
     headers = {
@@ -144,6 +143,7 @@ def search_records(ctx, module_name: str, search_criteria: str):
         module_name: Module to search in (e.g., 'Contacts', 'Leads')
         search_criteria: Search query (e.g., 'email:john@example.com')
     """
+    ensure_valid_token()
     access_token = get_access_token()
     zoho_config = get_zoho_config()
 
@@ -183,6 +183,7 @@ def create_record(ctx, module_name: str, record_data: dict):
         record_data: Dictionary containing the record fields and values
                     Example: {"First_Name": "John", "Last_Name": "Doe", "Email": "john@example.com"}
     """
+    ensure_valid_token()
     access_token = get_access_token()
     zoho_config = get_zoho_config()
 
@@ -227,6 +228,7 @@ def update_record(ctx, module_name: str, record_id: str, record_data: dict):
         record_data: Dictionary containing the fields to update and their new values
                     Example: {"First_Name": "Jane", "Email": "jane@example.com"}
     """
+    ensure_valid_token()
     access_token = get_access_token()
     zoho_config = get_zoho_config()
 
@@ -274,6 +276,7 @@ def delete_record(ctx, module_name: str, record_id: str):
         module_name: Module containing the record (e.g., 'Contacts', 'Leads')
         record_id: ID of the record to delete
     """
+    ensure_valid_token()
     access_token = get_access_token()
     zoho_config = get_zoho_config()
 
@@ -314,6 +317,7 @@ def bulk_create_records(ctx, module_name: str, records_data: list):
         records_data: List of dictionaries containing record data
                      Example: [{"First_Name": "John", "Last_Name": "Doe"}, {"First_Name": "Jane", "Last_Name": "Smith"}]
     """
+    ensure_valid_token()
     access_token = get_access_token()
     zoho_config = get_zoho_config()
 
@@ -362,6 +366,7 @@ def get_record_by_id(ctx, module_name: str, record_id: str):
         module_name: Module containing the record (e.g., 'Contacts', 'Leads')
         record_id: ID of the record to retrieve
     """
+    ensure_valid_token()
     access_token = get_access_token()
     zoho_config = get_zoho_config()
 
