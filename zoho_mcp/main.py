@@ -338,9 +338,9 @@ def create_lead_from_form(
         first_name: Optional first name.
         last_name: Required last name.
         mobile: Mobile phone number.
-        possible_funds_to_invest: Possible funds for investing.
-        client_status: Client status.
-        client_description: Client description.
+        possible_funds_to_invest: Possible funds for investing (will be stored in a Note).
+        client_status: Client status (maps to Lead_Status field).
+        client_description: Client description (will be stored in a Note).
     """
     ensure_valid_token()
     access_token = get_access_token()
@@ -369,12 +369,8 @@ def create_lead_from_form(
         record["First_Name"] = first_name
     if mobile:
         record["Mobile"] = mobile
-    if possible_funds_to_invest:
-        record["Possible_Funds_to_Invest"] = possible_funds_to_invest
     if client_status:
-        record["Client_Status"] = client_status
-    if client_description:
-        record["Client_Description"] = client_description
+        record["Lead_Status"] = client_status
 
     url = f"{zoho_config.base_url}/Leads"
     payload = {"data": [record]}
@@ -383,11 +379,52 @@ def create_lead_from_form(
 
     if response.status_code == 201:
         result = response.json()
+        note_result = None
+
+        # Try to add a Note with invest/description if provided
+        try:
+            data_items = result.get("data", []) or []
+            lead_id = None
+            if data_items and isinstance(data_items, list):
+                details = data_items[0].get("details") or {}
+                lead_id = details.get("id")
+
+            # Build note content only if we have something to add and a lead id
+            note_lines = []
+            if possible_funds_to_invest:
+                note_lines.append(f"Possible funds to invest: {possible_funds_to_invest}")
+            if client_description:
+                note_lines.append(f"Description: {client_description}")
+
+            if lead_id and note_lines:
+                note_content = "\n".join(note_lines)
+                notes_url = f"{zoho_config.base_url}/Notes"
+                note_payload = {
+                    "data": [
+                        {
+                            "Note_Title": "Lead Form Details",
+                            "Note_Content": note_content,
+                            "Parent_Id": lead_id,
+                            "se_module": "Leads",
+                        }
+                    ]
+                }
+                note_resp = requests.post(notes_url, headers=headers, data=json.dumps(note_payload))
+                if note_resp.status_code == 201:
+                    note_result = {"status": "created"}
+                else:
+                    note_result = {"status": "failed", "code": note_resp.status_code, "message": note_resp.text}
+            else:
+                note_result = {"status": "skipped"}
+        except Exception as _:
+            note_result = {"status": "failed", "message": "Unexpected error while creating note"}
+
         return {
             "status": "success",
             "module": "Leads",
             "message": "Lead created successfully",
             "data": result.get("data", []),
+            "note": note_result,
         }
     else:
         return {
@@ -531,6 +568,48 @@ def get_record_by_id(ctx, module_name: str, record_id: str):
 def get_greeting(name: str) -> str:
     """Get a personalized greeting"""
     return f"Hello, {name}!"
+
+
+@mcp.tool()
+def get_module_fields(ctx, module_name: str):
+    """
+    Get Zoho CRM module fields metadata including API names and picklist values.
+    """
+    ensure_valid_token()
+    access_token = get_access_token()
+    zoho_config = get_zoho_config()
+
+    headers = {
+        "Authorization": f"Zoho-oauthtoken {access_token}",
+        "Content-Type": "application/json",
+    }
+
+    url = f"{zoho_config.base_url}/settings/fields?module={module_name}"
+    response = requests.get(url, headers=headers)
+
+    if response.status_code == 200:
+        body = response.json()
+        fields = body.get("fields", [])
+        # normalize output to essential info
+        result = []
+        for f in fields:
+            entry = {
+                "api_name": f.get("api_name"),
+                "field_label": f.get("field_label"),
+                "data_type": f.get("data_type"),
+                "system_mandatory": f.get("system_mandatory"),
+            }
+            if f.get("pick_list_values"):
+                entry["pick_list_values"] = [v.get("actual_value") for v in f.get("pick_list_values", [])]
+            result.append(entry)
+        return {"status": "success", "module": module_name, "count": len(result), "fields": result}
+    else:
+        return {
+            "status": "error",
+            "module": module_name,
+            "message": response.text,
+            "code": response.status_code,
+        }
 
 
 def run():
