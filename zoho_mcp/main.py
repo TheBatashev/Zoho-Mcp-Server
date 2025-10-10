@@ -322,6 +322,82 @@ def update_record(ctx, module_name: str, record_id: str, record_data: dict):
         }
 
 @mcp.tool()
+def create_lead_from_form(
+    ctx,
+    first_name: str | None = None,
+    last_name: str = "",
+    mobile: str | None = None,
+    possible_funds_to_invest: str | None = None,
+    client_status: str | None = None,
+    client_description: str | None = None,
+):
+    """
+    Create a new Lead in Zoho CRM (module 'Leads') from form fields.
+
+    Args:
+        first_name: Optional first name.
+        last_name: Required last name.
+        mobile: Mobile phone number.
+        possible_funds_to_invest: Possible funds for investing.
+        client_status: Client status.
+        client_description: Client description.
+    """
+    ensure_valid_token()
+    access_token = get_access_token()
+    zoho_config = get_zoho_config()
+
+    headers = {
+        "Authorization": f"Zoho-oauthtoken {access_token}",
+        "Content-Type": "application/json",
+    }
+
+    # Validate last name
+    if not last_name:
+        return {
+            "status": "error",
+            "module": "Leads",
+            "message": "last_name is required",
+            "code": 400,
+        }
+
+    # Build record with only provided (non-empty) fields
+    record: dict[str, str] = {
+        "Last_Name": last_name.strip(),
+    }
+    if first_name :
+        first_name = first_name.strip()
+        record["First_Name"] = first_name
+    if mobile:
+        record["Mobile"] = mobile
+    if possible_funds_to_invest:
+        record["Possible_Funds_to_Invest"] = possible_funds_to_invest
+    if client_status:
+        record["Client_Status"] = client_status
+    if client_description:
+        record["Client_Description"] = client_description
+
+    url = f"{zoho_config.base_url}/Leads"
+    payload = {"data": [record]}
+
+    response = requests.post(url, headers=headers, data=json.dumps(payload))
+
+    if response.status_code == 201:
+        result = response.json()
+        return {
+            "status": "success",
+            "module": "Leads",
+            "message": "Lead created successfully",
+            "data": result.get("data", []),
+        }
+    else:
+        return {
+            "status": "error",
+            "module": "Leads",
+            "message": response.text,
+            "code": response.status_code,
+        }
+
+@mcp.tool()
 def delete_record(ctx, module_name: str, record_id: str):
     """
     Delete a record from a specific module
